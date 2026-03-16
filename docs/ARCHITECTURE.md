@@ -18,20 +18,37 @@ snomed/
 │   │   ├── __init__.py
 │   │   └── v1/
 │   │       ├── __init__.py    # router prefix /api/v1
-│   │       └── endpoints/     # route handlers (health, orders, …)
+│   │       └── endpoints/     # route handlers (health, RAG)
 │   │           ├── __init__.py
 │   │           ├── health.py
-│   │           └── orders.py
-│   ├── services/              # business logic (e.g. order.py)
-│   ├── repositories/          # data access (e.g. order.py)
-│   ├── models/               # Pydantic / domain models (e.g. order.py)
-│   ├── db/                    # async engine and session from config
-│   │   ├── __init__.py
-│   │   └── session.py
+│   │           ├── search.py     # RAG search
+│   │           └── ingest.py     # RAG ingest
+│   ├── services/              # business logic
+│   │   ├── rag.py            # RAG pipeline
+│   │   ├── retrieval.py      # vector search logic
+│   │   ├── embedding.py      # embedding model
+│   │   ├── generation.py     # LLM call
+│   │   └── ingestion.py      # store docs
+│   ├── repositories/          # data access
+│   │   ├── vector.py         # pgvector
+│   │   └── document.py       # document metadata (optional)
+│   ├── models/               # Pydantic / domain models
+│   │   ├── search.py
+│   │   ├── document.py
+│   │   └── rag.py
+│   ├── prompts/              # prompt templates only (no helper logic)
+│   │   ├── rag.py
+│   │   └── snomed.py
+│   ├── db/                    # connection only
+│   │   ├── session.py
+│   │   └── pgvector.py        # pgvector connection string
 │   └── utils/                 # shared helpers (e.g. logging)
 │       ├── __init__.py
 │       └── logging.py
 ├── tests/
+├── scripts/                   # CLI scripts (SNOMED data prep and ingest)
+│   ├── prepare_snomed_data.py # raw TSVs → final TSV (data/snomed_final.txt)
+│   └── ingest_snomed_from_tsv.py  # final TSV → pgvector
 ├── docs/
 │   ├── README.md
 │   ├── ARCHITECTURE.md        # this file
@@ -50,10 +67,11 @@ snomed/
 | **API**        | `app/api/v1/endpoints/`| Thin controllers: validate input, call service, return response. No business or DB logic. |
 | **Services**   | `app/services/`       | Business logic and use cases. Call repositories. |
 | **Repositories** | `app/repositories/`| Data access (DB, in-memory, or other backends). |
-| **Models**     | `app/models/`         | Pydantic request/response and domain models. |
-| **Config**     | `app/config.py`       | Load env and `.env`; expose app and DB settings. Build `DATABASE_URL` from `DB_*`. |
-| **DB**         | `app/db/`             | Async SQLAlchemy engine and session factory from `DATABASE_URL`. |
-| **Utils**      | `app/utils/`          | Cross-cutting helpers (e.g. centralized logging). |
+| **Models**     | `app/models/`         | Pydantic request/response and domain models (search, document, rag). |
+| **Prompts**    | `app/prompts/`        | Prompt templates only (no helper logic; e.g. `rag.py`, `snomed.py`). |
+| **Config**     | `app/config.py`       | Load env and `.env`; expose app, DB, and RAG (pgvector, embedding, LLM) settings. |
+| **DB**         | `app/db/`             | Async SQLAlchemy session; pgvector connection (sync URL for Langchain). |
+| **Utils**      | `app/utils/`          | Cross-cutting helpers (e.g. centralized logging, prompt helpers). |
 
 ## Request flow
 
@@ -67,14 +85,14 @@ Dependencies (e.g. DB session) can be injected via FastAPI’s DI; config is imp
 
 ## API versioning
 
-- All v1 routes are under **`/api/v1/`** (e.g. `/api/v1/health`, `/api/v1/orders`).
+- All v1 routes are under **`/api/v1/`** (e.g. `/api/v1/health`, `/api/v1/search`, `/api/v1/ingest`).
 - Route modules live in `app/api/v1/endpoints/`; the v1 router is defined in `app/api/v1/__init__.py` and mounted in `app/main.py`.
 - New endpoints: add a module under `endpoints/` and include its router in `app/api/v1/__init__.py`. For a future v2, add `app/api/v2/` and a separate prefix.
 
 ## Configuration and database
 
-- **Config:** `app/config.py` loads `.env` and exposes `APP_*` and `DB_*` variables. It builds **`DATABASE_URL`** from `DB_SCHEME`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, and `DB_NAME`.
-- **Database:** `app/db/session.py` creates an async SQLAlchemy engine from `DATABASE_URL` and provides `async_session_factory` and `get_async_session`. Repositories use the session for persistence when connected to a real DB.
+- **Config:** `app/config.py` loads `.env` and exposes `APP_*` and `DB_*` variables. It builds **`DATABASE_URL`** from `DB_SCHEME`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, and `DB_NAME`. For RAG it also builds **`VECTOR_DATABASE_URL`** (sync `postgresql+psycopg://` URL) from the same DB_* when `DB_SCHEME` is `postgresql`, or from env `VECTOR_DATABASE_URL` if set.
+- **Database:** `app/db/session.py` creates an async SQLAlchemy engine from `DATABASE_URL` and provides `async_session_factory` and `get_async_session`. Repositories use the session for persistence when connected to a real DB. **pgvector:** Vector store uses PostgreSQL with the [pgvector](https://github.com/pgvector/pgvector) extension; connection string is provided by `app/db/pgvector.py` (sync URL for Langchain PGVector).
 
 ## Logging
 
@@ -84,3 +102,20 @@ Dependencies (e.g. DB session) can be injected via FastAPI’s DI; config is imp
 
 - **Domain-based file names:** e.g. `order.py` in `services/`, `repositories/`, `models/` (folder indicates the layer).
 - **Snake_case** for modules and functions, **PascalCase** for classes. One main responsibility per module/class. See [RULE.md](RULE.md) for the full checklist.
+
+## RAG and layers
+
+RAG features follow the same layers; no extra top-level RAG folder.
+
+| RAG part        | Layer        | Location |
+|-----------------|-------------|----------|
+| Embedding       | Service     | `services/embedding.py` |
+| Retrieval       | Service     | `services/retrieval.py` |
+| Generation      | Service     | `services/generation.py` |
+| Pipeline        | Service     | `services/rag.py` |
+| Ingestion       | Service     | `services/ingestion.py` |
+| Vector DB       | Repository  | `repositories/vector.py` |
+| Document meta   | Repository  | `repositories/document.py` |
+| Prompt template | Prompts     | `prompts/rag.py`, `prompts/snomed.py` |
+| Endpoints       | API         | `api/v1/endpoints/search.py`, `ingest.py` |
+| DB client       | DB          | `db/pgvector.py` |

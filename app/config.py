@@ -42,3 +42,26 @@ def _build_database_url() -> str:
 
 
 DATABASE_URL: str = _build_database_url()
+
+
+def _build_vector_database_url() -> str:
+    """Build sync connection URL for pgvector (langchain-postgres uses psycopg)."""
+    explicit = get_env("VECTOR_DATABASE_URL", "")
+    if explicit:
+        return explicit
+    if DB_SCHEME != "postgresql":
+        return ""
+    port = f":{DB_PORT}" if DB_PORT else ""
+    user_pass = f"{quote_plus(DB_USER)}:{quote_plus(DB_PASSWORD)}@" if DB_USER else ""
+    return f"postgresql+psycopg://{user_pass}{DB_HOST}{port}/{DB_NAME}"
+
+
+# RAG / pgvector
+VECTOR_DATABASE_URL: str = _build_vector_database_url()
+RAG_COLLECTION_NAME: str = get_env("RAG_COLLECTION_NAME", "snomed_vectors")
+RAG_EMBEDDING_MODEL: str = get_env("RAG_EMBEDDING_MODEL", "BAAI/bge-large-en")
+RAG_TOP_K: int = int(get_env("RAG_TOP_K", "5"))
+
+# LLM configuration
+OPENAI_API_KEY: str = get_env("OPENAI_API_KEY", "")
+RAG_LLM_MODEL: str = get_env("RAG_LLM_MODEL", "gpt-4.1-mini")

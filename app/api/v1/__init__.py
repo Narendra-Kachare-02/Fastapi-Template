@@ -2,9 +2,10 @@
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import health, orders
+from app.api.v1.endpoints import health, ingest, search
 
-router = APIRouter(prefix="/api/v1", tags=["v1"])
+router = APIRouter(prefix="/api/v1")
 
-router.include_router(health.router, prefix="/health", tags=["health"])
-router.include_router(orders.router, prefix="/orders", tags=["orders"])
+router.include_router(health.router, prefix="/health")
+router.include_router(search.router, prefix="/search")
+router.include_router(ingest.router, prefix="/ingest")

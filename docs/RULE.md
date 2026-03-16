@@ -52,6 +52,8 @@ Based on Master's blog posts, videos, and guides, we distilled the following **s
 
 Following these guidelines ensures your project is **well-organized, maintainable, and scalable** in the Master style. For example, Master's "blueprint" uses a flat folder hierarchy, domain-based modules, and dedicated config and docs folders【33†L1-L4】【19†L1-L4】. By naming files after their domain (service, repository, etc.) and splitting concerns, you make code easier to navigate and explain – exactly as Master recommends【3†L119-L124】【27†L153-L160】.
 
-**API versioning (this project):** Endpoints live under `api/v1/endpoints/` (and later `api/v2/endpoints/`). In the structure above, `api/v1/endpoints/` holds route handlers (e.g. `health.py`, `orders.py`); add new endpoints there and register them in `app/api/v1/__init__.py`.
+**API versioning (this project):** Endpoints live under `api/v1/endpoints/` (and later `api/v2/endpoints/`). In the structure above, `api/v1/endpoints/` holds route handlers (e.g. `health.py`, `orders.py`, `search.py`, `ingest.py`); add new endpoints there and register them in `app/api/v1/__init__.py`.
+
+**RAG (this project):** RAG follows the same layers: embedding, retrieval, generation, and ingestion in `services/`; vector store in `repositories/vector.py`; pgvector connection in `db/pgvector.py`; prompt templates in `prompts/`. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full "RAG and layers" table.
 
 **Sources:** Master official blog and newsletter (see "Best Practices for Python Code Structuring" and "Efficient Python Project Setup"【3†L119-L124】【21†L128-L136】【21†L139-L147】), Master's design patterns and architecture posts【12†L69-L77】【27†L153-L160】, and Master's project blueprint guides【19†L1-L4】【33†L1-L4】. These informed each rule above.
